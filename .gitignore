@@ -52,5 +52,6 @@ temp/
 Thumbs.db
 
 # App specific
-.claude/
+.claude/settings.json
+.claude/settings.local.json
 .local/
