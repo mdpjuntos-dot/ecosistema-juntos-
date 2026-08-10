@@ -16,12 +16,40 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Transcribe audio using Anthropic (if available)
-    // For now, we'll use a placeholder approach
-    // In production, use Deepgram or another transcription service
+    // Transcribe audio using Deepgram
+    const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
 
-    // Simulate transcription - in production use real transcription API
-    const transcribedText = `[Audio received and transcribed]`;
+    if (!deepgramApiKey) {
+      return NextResponse.json(
+        { error: 'Deepgram API key not configured' },
+        { status: 500 }
+      );
+    }
+
+    // Convert base64 to buffer
+    const audioBuffer = Buffer.from(audioBase64, 'base64');
+
+    // Call Deepgram API
+    const deepgramResponse = await fetch('https://api.deepgram.com/v1/listen?model=nova-2&language=es&punctuate=true', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Token ${deepgramApiKey}`,
+        'Content-Type': 'audio/webm',
+      },
+      body: audioBuffer,
+    });
+
+    if (!deepgramResponse.ok) {
+      const error = await deepgramResponse.text();
+      console.error('Deepgram error:', error);
+      return NextResponse.json(
+        { error: 'Failed to transcribe audio', details: error },
+        { status: 500 }
+      );
+    }
+
+    const transcriptionData = await deepgramResponse.json();
+    const transcribedText = transcriptionData.results?.channels?.[0]?.alternatives?.[0]?.transcript || '[No transcription]';
 
     // Build message history
     const messageHistory = messages.map((m: any) => ({

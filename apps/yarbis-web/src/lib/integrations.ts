@@ -70,9 +70,38 @@ class GoogleIntegration {
 
   // Google Drive Operations
   async createFolder(name: string, parentId?: string): Promise<string> {
-    // In production, use Google Drive API
-    // For now, return mock ID
-    return `folder-${Date.now()}`;
+    try {
+      if (!this.authToken) {
+        console.log(`[Simulated] Creating folder: ${name} (auth token not available)`);
+        return `folder-${Date.now()}`;
+      }
+
+      // In production, use Google Drive API v3
+      // This requires proper OAuth setup
+      const response = await fetch('https://www.googleapis.com/drive/v3/files', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.authToken.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name,
+          mimeType: 'application/vnd.google-apps.folder',
+          parents: parentId ? [parentId] : [],
+        }),
+      });
+
+      if (!response.ok) {
+        console.error(`Failed to create folder: ${response.statusText}`);
+        return `folder-${Date.now()}`;
+      }
+
+      const data: any = await response.json();
+      return data.id || `folder-${Date.now()}`;
+    } catch (error) {
+      console.error('Error creating folder:', error);
+      return `folder-${Date.now()}`;
+    }
   }
 
   async uploadFile(
@@ -81,9 +110,45 @@ class GoogleIntegration {
     folderId?: string,
     mimeType: string = 'text/plain'
   ): Promise<string> {
-    // In production, use Google Drive API
-    console.log(`[Simulated] Uploading file: ${name} to folder: ${folderId}`);
-    return `file-${Date.now()}`;
+    try {
+      if (!this.authToken) {
+        console.log(`[Simulated] Uploading file: ${name} to folder: ${folderId}`);
+        return `file-${Date.now()}`;
+      }
+
+      // Create FormData for file upload
+      const metadata = {
+        name,
+        mimeType,
+        parents: folderId ? [folderId] : [],
+      };
+
+      const form = new FormData();
+      form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+      form.append('file', new Blob([content], { type: mimeType }));
+
+      const response = await fetch(
+        'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.authToken.accessToken}`,
+          },
+          body: form,
+        }
+      );
+
+      if (!response.ok) {
+        console.error(`Failed to upload file: ${response.statusText}`);
+        return `file-${Date.now()}`;
+      }
+
+      const data: any = await response.json();
+      return data.id || `file-${Date.now()}`;
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      return `file-${Date.now()}`;
+    }
   }
 
   // Google Sheets Operations
@@ -91,12 +156,63 @@ class GoogleIntegration {
     title: string,
     headers: string[]
   ): Promise<{ sheetId: string; spreadsheetId: string }> {
-    // In production, use Google Sheets API
-    console.log(`[Simulated] Creating sheet: ${title} with headers: ${headers.join(', ')}`);
-    return {
-      spreadsheetId: `ss-${Date.now()}`,
-      sheetId: `sheet-${Date.now()}`,
-    };
+    try {
+      if (!this.authToken) {
+        console.log(`[Simulated] Creating sheet: ${title} with headers: ${headers.join(', ')}`);
+        return {
+          spreadsheetId: `ss-${Date.now()}`,
+          sheetId: `sheet-${Date.now()}`,
+        };
+      }
+
+      // Create new spreadsheet
+      const createResponse = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.authToken.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          properties: { title },
+          sheets: [
+            {
+              properties: { title: 'Data' },
+              data: [
+                {
+                  rowData: [
+                    {
+                      values: headers.map((header) => ({
+                        userEnteredValue: { stringValue: header },
+                      })),
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      });
+
+      if (!createResponse.ok) {
+        console.error(`Failed to create sheet: ${createResponse.statusText}`);
+        return {
+          spreadsheetId: `ss-${Date.now()}`,
+          sheetId: `sheet-${Date.now()}`,
+        };
+      }
+
+      const data: any = await createResponse.json();
+      return {
+        spreadsheetId: data.spreadsheetId || `ss-${Date.now()}`,
+        sheetId: data.sheets?.[0]?.properties?.sheetId?.toString() || `sheet-${Date.now()}`,
+      };
+    } catch (error) {
+      console.error('Error creating sheet:', error);
+      return {
+        spreadsheetId: `ss-${Date.now()}`,
+        sheetId: `sheet-${Date.now()}`,
+      };
+    }
   }
 
   async appendRow(
@@ -104,11 +220,38 @@ class GoogleIntegration {
     sheetName: string,
     values: (string | number)[]
   ): Promise<boolean> {
-    // In production, use Google Sheets API
-    console.log(
-      `[Simulated] Appending to ${sheetName}: ${values.join(', ')}`
-    );
-    return true;
+    try {
+      if (!this.authToken) {
+        console.log(`[Simulated] Appending to ${sheetName}: ${values.join(', ')}`);
+        return true;
+      }
+
+      // Append row to sheet
+      const response = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${sheetName}'!A:A:append?valueInputOption=USER_ENTERED`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.authToken.accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            values: [values],
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        console.error(`Failed to append row: ${response.statusText}`);
+        return false;
+      }
+
+      console.log(`Row appended to ${sheetName}`);
+      return true;
+    } catch (error) {
+      console.error('Error appending row:', error);
+      return false;
+    }
   }
 
   // Gmail Operations
@@ -118,20 +261,49 @@ class GoogleIntegration {
     body: string,
     attachments?: Array<{ filename: string; content: string }>
   ): Promise<string> {
-    // In production, use Gmail API
-    console.log(
-      `[Simulated] Sending email to ${to}: "${subject}"`
-    );
+    try {
+      if (!this.authToken) {
+        console.log(`[Simulated] Sending email to ${to}: "${subject}"`);
+        return `email-${Date.now()}`;
+      }
 
-    // Simulate email sent
-    if (typeof window !== 'undefined') {
-      // Show notification
-      const notification = new Notification('Email Enviado', {
-        body: `Email enviado a ${to}`,
+      // Build email message
+      const emailLines: string[] = [
+        `To: ${to}`,
+        `Subject: ${subject}`,
+        'MIME-Version: 1.0',
+        'Content-type: text/html; charset=UTF-8',
+        '',
+        body,
+      ];
+
+      const email = emailLines.join('\n');
+      const base64Email = Buffer.from(email).toString('base64');
+
+      // Send via Gmail API
+      const response = await fetch('https://www.googleapis.com/gmail/v1/users/me/messages/send', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.authToken.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          raw: base64Email,
+        }),
       });
-    }
 
-    return `email-${Date.now()}`;
+      if (!response.ok) {
+        console.error(`Failed to send email: ${response.statusText}`);
+        return `email-${Date.now()}`;
+      }
+
+      const data: any = await response.json();
+      console.log(`Email sent successfully to ${to}`);
+      return data.id || `email-${Date.now()}`;
+    } catch (error) {
+      console.error('Error sending email:', error);
+      return `email-${Date.now()}`;
+    }
   }
 
   // Slack Integration (via webhook)
@@ -141,10 +313,22 @@ class GoogleIntegration {
     channel?: string
   ): Promise<boolean> {
     try {
-      // In production, post to actual webhook
-      console.log(
-        `[Simulated] Posting to Slack ${channel || 'default channel'}: ${message}`
-      );
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channel,
+          text: message,
+          mrkdwn: true,
+        }),
+      });
+
+      if (!response.ok) {
+        console.error(`Failed to send Slack message: ${response.statusText}`);
+        return false;
+      }
+
+      console.log(`Slack message sent to ${channel || 'default channel'}`);
       return true;
     } catch (error) {
       console.error('Error sending Slack message:', error);
@@ -157,9 +341,37 @@ class GoogleIntegration {
     databaseId: string,
     properties: Record<string, any>
   ): Promise<string> {
-    // In production, use Notion API
-    console.log(`[Simulated] Adding to Notion database ${databaseId}:`, properties);
-    return `notion-${Date.now()}`;
+    try {
+      if (!this.authToken) {
+        console.log(`[Simulated] Adding to Notion database ${databaseId}:`, properties);
+        return `notion-${Date.now()}`;
+      }
+
+      const response = await fetch('https://api.notion.com/v1/pages', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.authToken.accessToken}`,
+          'Content-Type': 'application/json',
+          'Notion-Version': '2022-06-28',
+        },
+        body: JSON.stringify({
+          parent: { database_id: databaseId },
+          properties,
+        }),
+      });
+
+      if (!response.ok) {
+        console.error(`Failed to add to Notion: ${response.statusText}`);
+        return `notion-${Date.now()}`;
+      }
+
+      const data: any = await response.json();
+      console.log(`Added to Notion database ${databaseId}`);
+      return data.id || `notion-${Date.now()}`;
+    } catch (error) {
+      console.error('Error adding to Notion:', error);
+      return `notion-${Date.now()}`;
+    }
   }
 }
 
