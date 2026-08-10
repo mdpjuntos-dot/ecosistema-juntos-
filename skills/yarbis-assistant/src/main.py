@@ -1,169 +1,179 @@
-"""Yarbis Assistant - MCP Server for Club Juntos integration."""
+"""Yarbis Bot - Asistente funcional para Club Juntos."""
 
-from fastmcp import Server
-from fastmcp.server import Request, RequestContext
 import json
 from personality import YarbisPersonality
-from orchestrator import SkillOrchestrator
+from handlers import YarbisBot
 
-# Initialize Yarbis
-app = Server("yarbis-assistant")
-yarbis = YarbisPersonality()
-orchestrator = SkillOrchestrator()
+# Inicializar Yarbis
+yarbis_personality = YarbisPersonality()
+yarbis_bot = YarbisBot()
 
 
-@app.call_tool()
-async def chat(context: RequestContext, message: str) -> str:
+def chat(user_input: str) -> str:
     """
-    Main chat endpoint - routes user requests to appropriate skills.
+    Procesa comando del usuario y ejecuta acción.
 
     Args:
-        message: User's natural language request
+        user_input: Comando natural del usuario
 
     Returns:
-        Yarbis's response with action taken or info needed
-    """
-    # Parse intent from message
-    intent = orchestrator.detect_intent(message)
-
-    response = {
-        "status": "processing",
-        "message": yarbis.get_thinking_phrase(),
-        "intent": intent,
-    }
-
-    # Route to appropriate handler
-    if intent == "new_student":
-        result = await orchestrator.handle_new_student(message)
-        response.update(result)
-
-    elif intent == "generate_receipt":
-        result = await orchestrator.handle_receipt_generation(message)
-        response.update(result)
-
-    elif intent == "insurance_form":
-        result = await orchestrator.handle_insurance_form(message)
-        response.update(result)
-
-    elif intent == "attendance_sheet":
-        result = await orchestrator.handle_attendance_sheet(message)
-        response.update(result)
-
-    elif intent == "help":
-        response["message"] = get_help_text()
-        response["status"] = "info"
-
-    else:
-        response["message"] = "No entendí bien, boludo. ¿Podés ser más específico?"
-        response["status"] = "need_clarification"
-
-    return json.dumps(response, ensure_ascii=False, indent=2)
-
-
-@app.call_tool()
-async def invoke_skill(context: RequestContext, skill_name: str, params: dict) -> str:
-    """
-    Invoke a specific Club Juntos skill.
-
-    Args:
-        skill_name: Name of the skill to invoke
-        params: Parameters for the skill
-
-    Returns:
-        Result from the skill
+        Respuesta JSON con resultado y acciones
     """
     try:
-        result = await orchestrator.invoke_skill(skill_name, params)
-        return json.dumps(
-            {
-                "status": "success",
-                "message": yarbis.get_affirmation(),
-                "data": result,
-            },
-            ensure_ascii=False,
-        )
+        # Procesar comando
+        result = yarbis_bot.process_command(user_input)
+
+        # Agregar personalidad
+        if "message" in result and not result["message"].startswith("🤖"):
+            if result.get("success", True):
+                # Agregar personalidad positiva
+                pass
+            elif not result.get("success", True):
+                # Respuesta de error con personalidad
+                pass
+
+        return json.dumps(result, ensure_ascii=False, indent=2)
+
     except Exception as e:
         return json.dumps(
             {
-                "status": "error",
-                "message": f"{yarbis.get_error_message()} Error: {str(e)}",
+                "success": False,
+                "message": f"{yarbis_personality.get_error_message()} Error: {str(e)}",
                 "error": str(e),
             },
             ensure_ascii=False,
         )
 
 
-@app.call_tool()
-async def list_available_skills() -> str:
-    """List all available Club Juntos skills that Yarbis can invoke."""
-    skills = orchestrator.get_available_skills()
+def add_student(
+    first_name: str,
+    last_name: str,
+    dni: str,
+    email: str,
+    phone: str,
+    date_of_birth: str,
+) -> str:
+    """Ingresa un alumno nuevo."""
+    result = yarbis_bot.handle_student_data(
+        first_name, last_name, dni, email, phone, date_of_birth
+    )
+
+    # Sincronizar a Google Drive
+    yarbis_bot.sync_to_drive("alumnos", result)
+
+    # Notificar a Slack
+    yarbis_bot.send_slack_notification(
+        f"✅ Nuevo alumno: {first_name} {last_name}"
+    )
+
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+def get_student_status(name_or_id: str) -> str:
+    """Obtiene estado de un alumno."""
+    result = yarbis_bot.student_handler.get_student_status(name_or_id)
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+def generate_receipt(student_name: str, amount: float) -> str:
+    """Genera recibo."""
+    result = yarbis_bot.handle_receipt_data(student_name, amount)
+
+    if result.get("success"):
+        # Enviar por email
+        yarbis_bot.receipt_handler.send_receipt_email(result.get("receiptId"))
+
+        # Sincronizar a Drive
+        yarbis_bot.sync_to_drive("recibos", result)
+
+        # Notificar a Slack
+        yarbis_bot.send_slack_notification(
+            f"💰 Recibo generado para {student_name}: ${amount}"
+        )
+
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+def list_students() -> str:
+    """Lista todos los alumnos."""
+    result = yarbis_bot.student_handler.list_students()
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+def get_pending_receipts() -> str:
+    """Obtiene recibos pendientes."""
+    result = yarbis_bot.receipt_handler.get_pending_receipts()
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+def mark_attendance(student_name: str, status: str = "present") -> str:
+    """Marca asistencia."""
+    result = yarbis_bot.attendance_handler.mark_attendance(student_name, status)
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+def complete_insurance_form(student_name: str, insurance_company: str) -> str:
+    """Completa formulario de obra social."""
+    result = yarbis_bot.insurance_handler.complete_insurance_form(
+        student_name, insurance_company
+    )
+
+    if result.get("success"):
+        # Sincronizar a Drive
+        yarbis_bot.sync_to_drive("obras_sociales", result)
+
+        # Notificar a Slack
+        yarbis_bot.send_slack_notification(
+            f"📋 Obra social {insurance_company} completada para {student_name}"
+        )
+
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+def get_help() -> str:
+    """Retorna menú de ayuda."""
     return json.dumps(
         {
-            "status": "success",
-            "skills": skills,
-            "message": f"Tengo {len(skills)} skills disponibles, boludo",
+            "message": """
+🤖 **Yarbis - Tu asistente de Club Juntos**
+
+**📝 Gestión de Alumnos:**
+- "Ingresar alumno nuevo"
+- "Estado de [nombre]"
+- "Todos los alumnos"
+
+**💰 Recibos:**
+- "Generar recibo para [nombre]"
+- "Recibos pendientes"
+
+**📋 Obras Sociales:**
+- "Obra social para [nombre]"
+
+**📊 Asistencia:**
+- "Planilla del mes"
+- "Marcar presente a [nombre]"
+
+**🔧 Utilidades:**
+- "Ayuda" - Este menú
+- "Qué podes hacer"
+
+¿Qué necesitás?
+"""
         },
         ensure_ascii=False,
-        indent=2,
     )
 
 
-@app.call_tool()
-async def get_student_status(context: RequestContext, student_id: str) -> str:
-    """Get current status of a student."""
-    try:
-        status = await orchestrator.get_student_status(student_id)
-        return json.dumps(
-            {
-                "status": "success",
-                "data": status,
-                "message": yarbis.get_affirmation(),
-            },
-            ensure_ascii=False,
-        )
-    except Exception as e:
-        return json.dumps(
-            {
-                "status": "error",
-                "message": f"{yarbis.get_error_message()}: {str(e)}",
-            },
-            ensure_ascii=False,
-        )
-
-
-def get_help_text() -> str:
-    """Return help text for available commands."""
-    return """
-🤖 **Yarbis - Tu asistente de Club Juntos**
-
-Estos son los comandos que manejo:
-
-📝 **Gestión de Alumnos:**
-- "Ingresar alumno nuevo" → Nuevo alumno al sistema
-- "Ver estado de [nombre]" → Chequear info del alumno
-- "Renovar alumno" → Renovar membresía
-
-💰 **Recibos:**
-- "Generar recibo para [nombre]" → Crear recibo
-- "Recibos pendientes" → Ver recibos sin pagar
-
-📋 **Obras Sociales:**
-- "Completar formulario de [obra social]" → Auto-completa formularios
-- "Listar obras sociales" → Ver integradas
-
-📊 **Planillas:**
-- "Asistencia del mes" → Planilla de asistencia
-- "Crear planilla" → Nueva planilla
-
-🔧 **Utilidades:**
-- "Ayuda" → Este menú
-- "Qué podés hacer?" → Mis funciones
-
-¿Qué necesitás hacer hoy?
-"""
-
-
 if __name__ == "__main__":
-    import uvicorn
+    # Pruebas
+    print("🤖 Yarbis Bot Iniciado\n")
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Test: Chat
+    result = chat("Qué puedo hacer?")
+    print(result)
+
+    # Test: Ingresar alumno
+    print("\n" + "="*50)
+    print("Ingresando alumno...")
+    result = add_student("Juan", "García", "45123456", "juan@example.com", "1123456789", "15/05/2010")
+    print(result)
