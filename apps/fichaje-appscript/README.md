@@ -8,8 +8,8 @@ Versión gratuita del control de asistencia de profesores. Usa una planilla de G
 |---|---|
 | Lógica de horarios, tardanzas, métricas y tablero | Hecha y probada con Node (`test/logic.test.js`) |
 | Dashboard solo para la cuenta dueña | Hecho. No probado en Google todavía |
-| Fichaje desde la web app | **Pendiente.** Con "Ejecutar como: yo", Apps Script no devuelve el correo de las profesoras con cuentas personales de Gmail, así que no pueden identificarse |
-| Fichaje por Google Forms | Propuesto. Ver la sección "Fichaje" |
+| Fichaje por Google Forms | Implementado (`onFormSubmit`). No probado en Google todavía |
+| Fichaje desde la web app (`Fichaje.html`) | **No usar.** Con "Ejecutar como: yo", Apps Script no devuelve el correo de cuentas personales de Gmail |
 
 ## Archivos
 
@@ -46,12 +46,19 @@ En la configuración de la planilla (Archivo > Configuración), poné la zona ho
    - Quién tiene acceso: **Cualquier persona con cuenta de Google**.
 4. Abrí la URL de la web app con `?vista=dashboard`. Si no sos la cuenta dueña, la página dice "No autorizado".
 
-## Fichaje (propuesta, pendiente de confirmar)
+## Fichaje por Google Forms
 
-Para que cada profesora quede identificada con su cuenta de Google:
+Cada profesora ficha con un formulario, identificada por su cuenta de Google.
 
-- Un Google Form con las opciones **Entrada**, **Salida** y **No vengo (falta justificada)**, y la opción de pedir inicio de sesión con Google para registrar el correo.
-- Un disparador `onFormSubmit` que toma el correo de la respuesta, busca al profesor en la hoja Profesores y escribe el evento en Fichajes con la misma lógica de tardanzas que ya está probada.
-- Confirmar en la configuración del formulario que el correo se registra con verificación de inicio de sesión. Las opciones cambian según el tipo de cuenta.
+1. Creá un Google Form con **una sola pregunta de opción múltiple llamada exactamente `Acción`**, con estas opciones:
+   - `Entrada`
+   - `Salida`
+   - `No vengo (falta justificada)`
+2. En la configuración del formulario, activá **Recopilar direcciones de correo electrónico** y, si tu cuenta lo permite, **Requerir inicio de sesión** para que el correo sea verificado.
+3. Vinculá el formulario con la planilla (Respuestas > Crear hoja de cálculo) y usá esa misma planilla.
+4. En Apps Script: Activadores > Agregar activador:
+   - Función: `onFormSubmit`
+   - Evento: **Desde la planilla** > **Al enviar el formulario**.
+5. Verificá que el correo de cada profesora en la hoja Profesores sea **exactamente** el de su cuenta de Google, en minúsculas.
 
-Esto requiere que cada profesora tenga cuenta de Google. Si alguna no tiene, se puede registrar el fichaje a mano desde el formulario de coordinación.
+Cada respuesta se procesa con la misma regla de tardanzas probada en `test/logic.test.js`. Si el correo no está en Profesores, o la opción no es reconocida, no se registra nada y el motivo queda en Ejecuciones (Apps Script > Ejecuciones). Hoy el formulario no le confirma nada a la profesora, así que conviene revisar ese registro los primeros días.

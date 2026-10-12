@@ -285,50 +285,81 @@ function getMyStatus() {
   };
 }
 
-function registerCheckIn() {
-  return withLock_(() => {
-    const staff = currentStaff_();
-    const ctx = context_();
-    if (eventsToday_(staff.legajo, ctx.date).some((e) => e.evento === 'entrada')) {
-      return { ok: false, message: 'Ya registraste la entrada hoy.' };
-    }
+/**
+ * Aplica una acción de fichaje ('entrada' | 'salida' | 'justificar') para una profesora.
+ * La usan el formulario de Google y la web app. Llamar siempre dentro de withLock_().
+ */
+function applyAction_(staff, accion) {
+  const ctx = context_();
+  const events = eventsToday_(staff.legajo, ctx.date);
+  const tiene = (evento) => events.some((e) => e.evento === evento);
+
+  if (accion === 'entrada') {
+    if (tiene('entrada')) return { ok: false, message: 'Ya registraste la entrada hoy.' };
     const sched = scheduleToday_(staff.legajo, ctx.weekday);
     const estado = sched ? checkInStatus(ctx.minutes, toMinutes(sched.start), tolerance_()) : 'presente';
     appendEvent_(ctx, staff, 'entrada', estado);
     const msg = estado === 'tarde' ? 'Entrada registrada, llegaste tarde.' : 'Entrada registrada. ¡Buen turno!';
     return { ok: true, message: msg, hora: ctx.hhmm };
-  });
+  }
+
+  if (accion === 'salida') {
+    if (!tiene('entrada')) return { ok: false, message: 'Todavía no registraste tu entrada hoy.' };
+    if (tiene('salida')) return { ok: false, message: 'Ya registraste la salida hoy.' };
+    appendEvent_(ctx, staff, 'salida', '');
+    return { ok: true, message: 'Salida registrada a las ' + ctx.hhmm + '.', hora: ctx.hhmm };
+  }
+
+  if (accion === 'justificar') {
+    if (tiene('entrada')) return { ok: false, message: 'Ya fichaste la entrada hoy, no hace falta justificar.' };
+    if (tiene('justificar')) return { ok: false, message: 'La falta de hoy ya está justificada.' };
+    appendEvent_(ctx, staff, 'justificar', 'justificado');
+    return { ok: true, message: 'Falta justificada registrada para hoy.' };
+  }
+
+  throw new Error('Acción desconocida: ' + accion);
+}
+
+function registerCheckIn() {
+  return withLock_(() => applyAction_(currentStaff_(), 'entrada'));
 }
 
 function registerCheckOut() {
-  return withLock_(() => {
-    const staff = currentStaff_();
-    const ctx = context_();
-    const events = eventsToday_(staff.legajo, ctx.date);
-    if (!events.some((e) => e.evento === 'entrada')) {
-      return { ok: false, message: 'Todavía no registraste tu entrada hoy.' };
-    }
-    if (events.some((e) => e.evento === 'salida')) {
-      return { ok: false, message: 'Ya registraste la salida hoy.' };
-    }
-    appendEvent_(ctx, staff, 'salida', '');
-    return { ok: true, message: 'Salida registrada a las ' + ctx.hhmm + '.', hora: ctx.hhmm };
-  });
+  return withLock_(() => applyAction_(currentStaff_(), 'salida'));
 }
 
 function registerJustification() {
-  return withLock_(() => {
-    const staff = currentStaff_();
-    const ctx = context_();
-    const events = eventsToday_(staff.legajo, ctx.date);
-    if (events.some((e) => e.evento === 'entrada')) {
-      return { ok: false, message: 'Ya fichaste la entrada hoy, no hace falta justificar.' };
+  return withLock_(() => applyAction_(currentStaff_(), 'justificar'));
+}
+
+// Opciones del formulario de fichaje (la pregunta debe llamarse "Acción")
+const FORM_ACTIONS = {
+  'Entrada': 'entrada',
+  'Salida': 'salida',
+  'No vengo (falta justificada)': 'justificar',
+};
+
+/**
+ * Disparador de Google Forms (planilla vinculada): procesa cada fichaje.
+ * Identifica a la profesora por el correo de su cuenta de Google que respondió el formulario.
+ */
+function onFormSubmit(e) {
+  const email = String((e.namedValues['Dirección de correo electrónico'] || [''])[0]).trim().toLowerCase();
+  const respuesta = String((e.namedValues['Acción'] || [''])[0]).trim();
+  const accion = FORM_ACTIONS[respuesta];
+
+  withLock_(() => {
+    const staff = staffList_().find((p) => p.email === email);
+    if (!staff) {
+      console.error('Fichaje de cuenta no registrada: ' + email);
+      return;
     }
-    if (events.some((e) => e.evento === 'justificar')) {
-      return { ok: false, message: 'La falta de hoy ya está justificada.' };
+    if (!accion) {
+      console.error('Acción no reconocida en el formulario: ' + respuesta);
+      return;
     }
-    appendEvent_(ctx, staff, 'justificar', 'justificado');
-    return { ok: true, message: 'Falta justificada registrada para hoy.' };
+    const result = applyAction_(staff, accion);
+    console.log(staff.legajo + ' ' + accion + ': ' + result.message);
   });
 }
 
