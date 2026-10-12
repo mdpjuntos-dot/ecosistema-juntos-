@@ -8,6 +8,9 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        border: 'hsl(var(--border))',
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
         yarbis: {
           50: '#fef3f2',
           100: '#fee4e2',

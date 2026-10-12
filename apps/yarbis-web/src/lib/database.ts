@@ -127,6 +127,20 @@ class Database {
     return newRecord;
   }
 
+  // Crea o actualiza la asistencia de un alumno en una fecha (evita duplicados)
+  setAttendance(studentId: string, date: string, status: AttendanceRecord['status']): AttendanceRecord {
+    const existing = Array.from(this.attendance.values()).find(
+      (r) => r.studentId === studentId && r.date === date
+    );
+    if (existing) {
+      const updated = { ...existing, status };
+      this.attendance.set(existing.id, updated);
+      this.saveToLocalStorage();
+      return updated;
+    }
+    return this.addAttendance({ studentId, date, status });
+  }
+
   getAttendanceByDate(date: string): AttendanceRecord[] {
     return Array.from(this.attendance.values()).filter(
       (r) => r.date === date
