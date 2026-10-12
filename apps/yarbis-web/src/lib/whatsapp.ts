@@ -42,14 +42,6 @@ export function extractTextMessages(payload: any): IncomingWhatsAppText[] {
   return messages;
 }
 
-export function isStaffPhone(phone: string): boolean {
-  const allowed = (process.env.WHATSAPP_STAFF_PHONES ?? '')
-    .split(',')
-    .map((p) => p.replace(/\D/g, ''))
-    .filter(Boolean);
-  return allowed.includes(phone.replace(/\D/g, ''));
-}
-
 export async function sendWhatsAppText(to: string, body: string): Promise<void> {
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;

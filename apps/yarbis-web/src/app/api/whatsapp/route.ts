@@ -1,11 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { handleAttendanceMessage } from '@/lib/attendance-bot';
-import {
-  extractTextMessages,
-  isStaffPhone,
-  sendWhatsAppText,
-  verifySignature,
-} from '@/lib/whatsapp';
+import { handleStaffMessage } from '@/lib/staff-bot';
+import { extractTextMessages, sendWhatsAppText, verifySignature } from '@/lib/whatsapp';
 
 // Verificación del webhook (Meta envía hub.mode, hub.verify_token y hub.challenge)
 export async function GET(request: NextRequest) {
@@ -37,13 +32,8 @@ export async function POST(request: NextRequest) {
 
   // Meta reintenta si no recibe 200, así que siempre respondemos 200 y procesamos aparte.
   for (const msg of extractTextMessages(payload)) {
-    if (!isStaffPhone(msg.from)) {
-      console.warn(`WhatsApp: mensaje de número no autorizado ${msg.from}`);
-      continue;
-    }
-
     try {
-      const reply = await handleAttendanceMessage(msg.text);
+      const reply = await handleStaffMessage(msg.from, msg.text);
       await sendWhatsAppText(msg.from, reply);
     } catch (error) {
       console.error('Error procesando mensaje de WhatsApp:', error);
