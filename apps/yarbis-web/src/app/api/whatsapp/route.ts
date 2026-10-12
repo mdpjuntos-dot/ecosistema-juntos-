@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { handleAttendanceCommand } from '@/lib/attendance-bot';
+import { handleAttendanceMessage } from '@/lib/attendance-bot';
 import {
   extractTextMessages,
   isStaffPhone,
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const reply = handleAttendanceCommand(msg.text);
+      const reply = await handleAttendanceMessage(msg.text);
       await sendWhatsAppText(msg.from, reply);
     } catch (error) {
       console.error('Error procesando mensaje de WhatsApp:', error);
