@@ -231,6 +231,125 @@ export async function describeToday(staff: Staff, at: Date = new Date()): Promis
   return `${staff.firstName} ${staff.lastName} (${staff.legajo})\n${turno}\n${fichaje}`;
 }
 
+/** Falta justificada: el profesor avisa que no viene hoy. */
+export async function registerJustification(staff: Staff, at: Date = new Date()): Promise<string> {
+  const now = localNow(at);
+  const existing = await getAttendance(staff.id, now.date);
+  if (existing?.checkIn) {
+    return `Ya fichaste la entrada hoy a las ${formatHour(existing.checkIn)}, no hace falta justificar.`;
+  }
+
+  check(
+    await getSupabase()
+      .from('attendance')
+      .upsert({ staff_id: staff.id, date: now.date, status: 'justificado', channel: 'whatsapp' }, { onConflict: 'staff_id,date' })
+  );
+  return 'Falta justificada registrada para hoy. Gracias por avisar.';
+}
+
+function weekdayOf(date: string): number {
+  const day = new Date(`${date}T12:00:00Z`).getUTCDay();
+  return day === 0 ? 7 : day;
+}
+
+function datesBetween(from: string, to: string): string[] {
+  const out: string[] = [];
+  const cursor = new Date(`${from}T12:00:00Z`);
+  const end = new Date(`${to}T12:00:00Z`);
+  while (cursor <= end) {
+    out.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return out;
+}
+
+export interface StaffMetric {
+  staff: Staff;
+  expected: number; // turnos del período que ya debieron cumplirse
+  presentes: number;
+  tardanzas: number;
+  ausencias: number;
+  justificadas: number;
+  puntualidad: number | null; // % de turnos cumplidos a horario
+}
+
+export interface MetricsReport {
+  from: string;
+  to: string;
+  rows: StaffMetric[];
+  totals: { expected: number; presentes: number; tardanzas: number; ausencias: number; justificadas: number; asistencia: number | null };
+}
+
+/** Métricas por profesor entre dos fechas (YYYY-MM-DD), según su horario fijo. */
+export async function getMetrics(from: string, to: string): Promise<MetricsReport> {
+  const db = getSupabase();
+  const today = localNow();
+
+  const [staffRes, schedRes, attRes] = await Promise.all([
+    db.from('staff').select('*').eq('active', true).order('legajo'),
+    db.from('staff_schedules').select('*'),
+    db.from('attendance').select('*').gte('date', from).lte('date', to),
+  ]);
+
+  const schedules = new Map<string, Schedule>();
+  for (const row of check(schedRes).data ?? []) schedules.set(`${row.staff_id}:${row.weekday}`, mapSchedule(row));
+  const attendance = new Map<string, AttendanceRow>();
+  for (const row of check(attRes).data ?? []) attendance.set(`${row.staff_id}:${row.date}`, mapAttendance(row));
+
+  const dates = datesBetween(from, to);
+
+  const rows: StaffMetric[] = (check(staffRes).data ?? []).map((row: any) => {
+    const staff = mapStaff(row);
+    const m: StaffMetric = { staff, expected: 0, presentes: 0, tardanzas: 0, ausencias: 0, justificadas: 0, puntualidad: null };
+    let onTime = 0;
+
+    for (const date of dates) {
+      if (date > today.date) break;
+      const schedule = schedules.get(`${staff.id}:${weekdayOf(date)}`);
+      if (!schedule) continue;
+
+      const att = attendance.get(`${staff.id}:${date}`);
+      if (att?.checkIn) {
+        m.expected++;
+        m.presentes++;
+        if (att.status === 'tarde') m.tardanzas++;
+        else onTime++;
+      } else if (att?.status === 'justificado') {
+        m.expected++;
+        m.justificadas++;
+      } else if (date === today.date && today.minutes <= toMinutes(schedule.endTime)) {
+        // El turno de hoy todavía no terminó: no cuenta como ausencia
+        continue;
+      } else {
+        m.expected++;
+        m.ausencias++;
+      }
+    }
+
+    m.puntualidad = m.expected ? Math.round((onTime / m.expected) * 100) : null;
+    return m;
+  });
+
+  rows.sort((a, b) => b.ausencias - a.ausencias || a.staff.lastName.localeCompare(b.staff.lastName));
+
+  const sum = (fn: (r: StaffMetric) => number) => rows.reduce((acc, r) => acc + fn(r), 0);
+  const expected = sum((r) => r.expected);
+  const presentes = sum((r) => r.presentes);
+  return {
+    from,
+    to,
+    rows,
+    totals: {
+      expected,
+      presentes,
+      tardanzas: sum((r) => r.tardanzas),
+      ausencias: sum((r) => r.ausencias),
+      justificadas: sum((r) => r.justificadas),
+      asistencia: expected ? Math.round((presentes / expected) * 100) : null,
+    },
+  };
+}
+
 export async function createStaff(input: {
   firstName: string;
   lastName: string;

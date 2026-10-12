@@ -12,15 +12,17 @@ import {
   findStaffByPhone,
   registerCheckIn,
   registerCheckOut,
+  registerJustification,
 } from './staff-attendance';
 
-type Action = 'entrada' | 'salida' | 'estado' | 'ayuda';
+type Action = 'entrada' | 'salida' | 'justificar' | 'estado' | 'ayuda';
 
 const HELP_TEXT =
   '👋 Hola, soy el bot de asistencia de Club Juntos.\n\n' +
   'Comandos:\n' +
   '• entrada: registra tu llegada\n' +
   '• salida: registra tu salida\n' +
+  '• justifico: avisás que no venís hoy (falta justificada)\n' +
   '• estado: muestra tu turno y fichaje de hoy\n\n' +
   'También podés escribir normal, por ejemplo "llegué" o "me voy".';
 
@@ -42,6 +44,9 @@ const COMMANDS: Record<string, Action> = {
   llegue: 'entrada',
   salida: 'salida',
   'me voy': 'salida',
+  justifico: 'justificar',
+  'no voy': 'justificar',
+  'falta justificada': 'justificar',
   estado: 'estado',
   ayuda: 'ayuda',
   help: 'ayuda',
@@ -57,12 +62,13 @@ const ACTION_TOOL: Anthropic.Tool = {
   description:
     'Indica qué quiere hacer el profesor con su fichaje de hoy. ' +
     'entrada = llegó o empieza el turno; salida = se retira o terminó el turno; ' +
+    'justificar = avisa que no viene hoy por una causa (falta justificada); ' +
     'estado = pregunta por su turno o fichaje; ayuda = pide instrucciones; ' +
     'otro = el mensaje no tiene que ver con fichajes (respondé en "reply").',
   input_schema: {
     type: 'object',
     properties: {
-      action: { type: 'string', enum: ['entrada', 'salida', 'estado', 'ayuda', 'otro'] },
+      action: { type: 'string', enum: ['entrada', 'salida', 'justificar', 'estado', 'ayuda', 'otro'] },
       reply: { type: 'string', description: 'Respuesta corta en español rioplatense, solo si action es "otro".' },
     },
     required: ['action'],
@@ -102,6 +108,8 @@ async function run(action: Action, staff: Staff): Promise<string> {
       return registerCheckIn(staff);
     case 'salida':
       return registerCheckOut(staff);
+    case 'justificar':
+      return registerJustification(staff);
     case 'estado':
       return describeToday(staff);
     case 'ayuda':

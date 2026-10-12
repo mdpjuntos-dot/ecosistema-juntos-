@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "import:staff": "npx tsx --env-file=.env.local scripts/import-staff.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.25.0",
