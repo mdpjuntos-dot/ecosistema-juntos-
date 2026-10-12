@@ -14,6 +14,7 @@ create table if not exists staff (
   specialty text,
   phone text unique,                      -- solo dígitos, normalizado con phoneKey()
   active boolean not null default true,
+  active_from date not null default current_date, -- desde acá se cuentan turnos en las métricas
   created_at timestamptz not null default now()
 );
 

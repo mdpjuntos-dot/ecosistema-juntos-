@@ -5,7 +5,8 @@
  *   npm run import:staff -- ruta/al/archivo.csv
  *
  * Columnas (la primera fila es el encabezado):
- *   nombre;apellido;dni;rol;especialidad;telefono;horarios
+ *   nombre;apellido;dni;rol;especialidad;telefono;horarios;desde
+ *   (desde es opcional: YYYY-MM-DD desde cuándo se cuentan turnos en las métricas; por defecto, hoy)
  *
  * horarios: "Lu 09:00-12:00, Ma 14:00-18:00" (Lu, Ma, Mi, Ju, Vi, Sa, Do)
  * El legajo lo asigna el sistema. Las filas con error se saltean y se informan.
@@ -53,6 +54,7 @@ async function main() {
         role: col(cells, 'rol'),
         specialty: col(cells, 'especialidad') || undefined,
         phone: col(cells, 'telefono') || undefined,
+        activeFrom: col(cells, 'desde') || undefined,
         schedules: parseSchedules(col(cells, 'horarios')),
       });
       created++;

@@ -17,6 +17,7 @@ export interface Staff {
   specialty: string | null;
   phone: string | null;
   active: boolean;
+  activeFrom: string; // desde cuándo se cuentan turnos en las métricas (YYYY-MM-DD)
 }
 
 export interface Schedule {
@@ -96,9 +97,13 @@ export function checkInStatus(nowMinutes: number, startMinutes: number, toleranc
   return nowMinutes > startMinutes + tolerance ? 'tarde' : 'presente';
 }
 
-/** Normaliza teléfonos argentinos: WhatsApp envía 549..., la carga manual suele ser 54... */
+/**
+ * Normaliza teléfonos argentinos a una clave común.
+ * WhatsApp envía 549 + área + número; el formulario suele tener solo área + número (10 dígitos).
+ */
 export function phoneKey(phone: string): string {
-  const digits = phone.replace(/\D/g, '');
+  let digits = phone.replace(/\D/g, '');
+  if (digits.length === 10) digits = '54' + digits; // sin código de país
   return digits.startsWith('549') ? '54' + digits.slice(3) : digits;
 }
 
@@ -115,6 +120,7 @@ function mapStaff(row: any): Staff {
     specialty: row.specialty,
     phone: row.phone,
     active: row.active,
+    activeFrom: row.active_from,
   };
 }
 
@@ -305,6 +311,7 @@ export async function getMetrics(from: string, to: string): Promise<MetricsRepor
 
     for (const date of dates) {
       if (date > today.date) break;
+      if (date < staff.activeFrom) continue; // antes del alta no hay registros que evaluar
       const schedule = schedules.get(`${staff.id}:${weekdayOf(date)}`);
       if (!schedule) continue;
 
@@ -357,6 +364,7 @@ export async function createStaff(input: {
   role: string;
   specialty?: string;
   phone?: string;
+  activeFrom?: string; // por defecto, hoy
   schedules: { weekday: number; startTime: string; endTime: string }[];
 }): Promise<Staff> {
   const db = getSupabase();
@@ -370,6 +378,7 @@ export async function createStaff(input: {
         role: input.role,
         specialty: input.specialty ?? null,
         phone: input.phone ? phoneKey(input.phone) : null,
+        ...(input.activeFrom ? { active_from: input.activeFrom } : {}),
       })
       .select('*')
       .single()
