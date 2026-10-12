@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; background: #f8fafc; color: #0f172a; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    .muted { color: #64748b; font-size: 14px; }
+    .card { background: #fff; border-radius: 12px; padding: 16px; margin: 16px 0; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+    .buttons { display: grid; gap: 12px; }
+    button { font-size: 18px; padding: 16px; border: 0; border-radius: 10px; color: #fff; background: #0f172a; cursor: pointer; }
+    button.entrada { background: #059669; }
+    button.salida { background: #334155; }
+    button.justificar { background: #b45309; }
+    button:disabled { opacity: .5; cursor: default; }
+    #msg { min-height: 24px; font-weight: 600; }
+    #error { color: #b91c1c; }
+  </style>
+</head>
+<body>
+  <h1 id="nombre">Cargando…</h1>
+  <p class="muted" id="legajo"></p>
+
+  <div class="card">
+    <p class="muted" id="turno"></p>
+    <p id="fichaje"></p>
+  </div>
+
+  <div class="buttons">
+    <button class="entrada" id="btn-entrada" onclick="run('registerCheckIn')">Entrada</button>
+    <button class="salida" id="btn-salida" onclick="run('registerCheckOut')">Salida</button>
+    <button class="justificar" id="btn-justificar" onclick="run('registerJustification')">No vengo (falta justificada)</button>
+  </div>
+
+  <p id="msg"></p>
+  <p id="error"></p>
+
+  <script>
+    function setButtons(status) {
+      document.getElementById('btn-entrada').disabled = !!status.entrada || !!status.justificado;
+      document.getElementById('btn-salida').disabled = !status.entrada || !!status.salida;
+      document.getElementById('btn-justificar').disabled = !!status.entrada || !!status.justificado;
+    }
+
+    function showStatus(status) {
+      document.getElementById('nombre').textContent = status.nombre;
+      document.getElementById('legajo').textContent = 'Legajo ' + status.legajo;
+      document.getElementById('turno').textContent = status.turno
+        ? 'Turno de hoy: ' + status.turno
+        : 'Hoy no tenés turno asignado';
+      let fichaje = 'Sin entrada registrada';
+      if (status.justificado) fichaje = 'Falta justificada';
+      if (status.entrada) {
+        fichaje = 'Entrada ' + status.entrada + (status.estadoEntrada === 'tarde' ? ' (tarde)' : '');
+        if (status.salida) fichaje += ' · salida ' + status.salida;
+      }
+      document.getElementById('fichaje').textContent = fichaje;
+      setButtons(status);
+    }
+
+    function showError(err) {
+      document.getElementById('error').textContent = err.message || String(err);
+      document.getElementById('msg').textContent = '';
+    }
+
+    function showResult(res) {
+      document.getElementById('error').textContent = '';
+      document.getElementById('msg').textContent = res.message;
+      google.script.run.withSuccessHandler(showStatus).withFailureHandler(showError).getMyStatus();
+    }
+
+    function run(fn) {
+      document.getElementById('msg').textContent = 'Registrando…';
+      google.script.run.withSuccessHandler(showResult).withFailureHandler(showError)[fn]();
+    }
+
+    google.script.run.withSuccessHandler(showStatus).withFailureHandler(showError).getMyStatus();
+  </script>
+</body>
+</html>

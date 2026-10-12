@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; background: #f8fafc; color: #0f172a; }
+    h1 { font-size: 22px; margin: 0; }
+    h2 { font-size: 14px; color: #64748b; font-weight: 500; margin: 24px 0 8px; }
+    .muted { color: #64748b; font-size: 13px; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+    .card { background: #fff; border-radius: 12px; padding: 14px; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+    .card b { display: block; font-size: 24px; margin-top: 4px; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; font-size: 14px; }
+    th, td { padding: 10px; text-align: left; border-bottom: 1px solid #e2e8f0; }
+    th { font-size: 12px; text-transform: uppercase; color: #64748b; }
+    td.num, th.num { text-align: right; }
+    .bar { height: 8px; width: 100px; background: #e2e8f0; border-radius: 4px; overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 6px; }
+    .bar i { display: block; height: 100%; background: #059669; }
+    .state { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #e2e8f0; }
+    .wrap { overflow-x: auto; }
+    select { font-size: 14px; padding: 6px; }
+    #error { color: #b91c1c; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Dashboard de asistencia</h1>
+    <p class="muted" id="generado"></p>
+    <label class="muted">Período:
+      <select id="days" onchange="load()">
+        <option value="7">7 días</option>
+        <option value="30" selected>30 días</option>
+        <option value="90">90 días</option>
+      </select>
+    </label>
+  </header>
+  <p id="error"></p>
+
+  <h2>Hoy</h2>
+  <div class="cards" id="kpis"></div>
+
+  <h2>Período</h2>
+  <div class="cards" id="totals"></div>
+
+  <h2>Por profesor</h2>
+  <div class="wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Legajo</th><th>Profesor</th><th>Rol</th>
+          <th class="num">Turnos</th><th class="num">Presentes</th><th class="num">Tardanzas</th>
+          <th class="num">Ausencias</th><th class="num">Justif.</th><th>A horario</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+  <h2>Tablero de hoy</h2>
+  <div class="wrap">
+    <table>
+      <thead><tr><th>Legajo</th><th>Profesor</th><th>Turno</th><th>Entrada</th><th>Estado</th></tr></thead>
+      <tbody id="board"></tbody>
+    </table>
+  </div>
+
+  <script>
+    function el(tag, text, cls) {
+      const node = document.createElement(tag);
+      if (text !== undefined && text !== null) node.textContent = text;
+      if (cls) node.className = cls;
+      return node;
+    }
+
+    function card(label, value) {
+      const c = el('div', null, 'card');
+      c.appendChild(el('span', label, 'muted'));
+      c.appendChild(el('b', value));
+      return c;
+    }
+
+    function pct(v) { return v === null || v === undefined ? '—' : v + '%'; }
+
+    function render(data) {
+      document.getElementById('error').textContent = '';
+      document.getElementById('generado').textContent = 'Actualizado ' + data.generadoEn;
+
+      const k = data.board.kpis;
+      const kpis = document.getElementById('kpis');
+      kpis.innerHTML = '';
+      [['Presentes', k.presentes], ['Trabajando ahora', k.trabajando], ['Tardanzas', k.tardanzas],
+       ['Pendientes', k.pendientes], ['Ausentes', k.ausentes]].forEach(([l, v]) => kpis.appendChild(card(l, v)));
+
+      const t = data.metrics.totals;
+      const totals = document.getElementById('totals');
+      totals.innerHTML = '';
+      [['Asistencia', pct(t.asistencia)], ['Tardanzas', t.tardanzas], ['Ausencias', t.ausencias],
+       ['Justificadas', t.justificadas], ['Turnos programados', t.expected]].forEach(([l, v]) => totals.appendChild(card(l, v)));
+
+      const rows = document.getElementById('rows');
+      rows.innerHTML = '';
+      data.metrics.rows.forEach((r) => {
+        const tr = el('tr');
+        tr.appendChild(el('td', r.legajo));
+        tr.appendChild(el('td', r.nombre + ' ' + r.apellido));
+        tr.appendChild(el('td', r.rol));
+        tr.appendChild(el('td', r.expected, 'num'));
+        tr.appendChild(el('td', r.presentes, 'num'));
+        tr.appendChild(el('td', r.tardanzas, 'num'));
+        tr.appendChild(el('td', r.ausencias, 'num'));
+        tr.appendChild(el('td', r.justificadas, 'num'));
+        const tdBar = el('td');
+        const bar = el('span', null, 'bar');
+        const fill = el('i');
+        fill.style.width = (r.puntualidad || 0) + '%';
+        bar.appendChild(fill);
+        tdBar.appendChild(bar);
+        tdBar.appendChild(document.createTextNode(pct(r.puntualidad)));
+        tr.appendChild(tdBar);
+        rows.appendChild(tr);
+      });
+
+      const board = document.getElementById('board');
+      board.innerHTML = '';
+      data.board.entries.forEach((e) => {
+        const tr = el('tr');
+        tr.appendChild(el('td', e.legajo));
+        tr.appendChild(el('td', e.nombre + ' ' + e.apellido));
+        tr.appendChild(el('td', e.sched ? e.sched.start + ' – ' + e.sched.end : '—'));
+        tr.appendChild(el('td', e.entrada || '—'));
+        const st = el('td');
+        st.appendChild(el('span', e.state + (e.entrada === 'tarde' ? ' · tarde' : ''), 'state'));
+        tr.appendChild(st);
+        board.appendChild(tr);
+      });
+    }
+
+    function showError(err) {
+      document.getElementById('error').textContent = err.message || String(err);
+    }
+
+    function load() {
+      const days = Number(document.getElementById('days').value);
+      google.script.run.withSuccessHandler(render).withFailureHandler(showError).getDashboard(days);
+    }
+
+    load();
+  </script>
+</body>
+</html>
